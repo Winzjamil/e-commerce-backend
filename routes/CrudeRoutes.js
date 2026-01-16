@@ -1,19 +1,19 @@
 import express from 'express';
+import { createActivity } from '../controllers/controller.js';
 export const crudePretectedRoutes = ({
   model,
   basePath = '/',
   middleWare = {},
+  activity = {},
 }) => {
   const router = express.Router();
   const wrap = (fn) => (req, res, next) => fn(req, res, next).catch(next);
+  const { create = [], update = [], getAll = [], remove = [] } = middleWare;
   const {
-    create = [],
-    update = [],
-    getById = [],
-    getAll = [],
-    remove = [],
-  } = middleWare;
-
+    create: createActivityAction,
+    update: updateActivityAction,
+    remove: removeActivityAction,
+  } = activity;
   router.get(
     basePath,
     ...getAll,
@@ -41,6 +41,16 @@ export const crudePretectedRoutes = ({
       }
       const newDoc = new model(docData);
       const savedDoc = await newDoc.save();
+
+      if (req.user && createActivityAction) {
+        const itemName = savedDoc.name || savedDoc.title || savedDoc._id;
+        createActivity({
+          owner: req.user.id,
+          email: req.user.email,
+          action: createActivityAction,
+          details: ` Added "${itemName}" to ${model.modelName}`,
+        });
+      }
       res.status(201).json({
         message: `${model.modelName} created successfully`,
         data: savedDoc,
@@ -66,6 +76,15 @@ export const crudePretectedRoutes = ({
         message: `${model.modelName} fetched successfully`,
         data: docs,
       });
+      if (req.user && removeActivityAction) {
+        const itemName = docs.name || docs.title || docs._id;
+        createActivity({
+          owner: req.user.id,
+          action: removeActivityAction,
+          email: req.user.email,
+          details: ` Remove "${itemName}"from${model.modelName} `,
+        });
+      }
     })
   );
 
@@ -87,6 +106,15 @@ export const crudePretectedRoutes = ({
         message: `${model.modelName} updated successfully`,
         data: updatedDoc,
       });
+      if (req.user && updateActivityAction) {
+        const itemName = updatedDoc.name || updatedDoc.title || updatedDoc._id;
+        createActivity({
+          owner: req.user.id,
+          email: req.user.email,
+          action: updateActivityAction,
+          details: ` Updet "${itemName}" on ${model.modelName} `,
+        });
+      }
     })
   );
 

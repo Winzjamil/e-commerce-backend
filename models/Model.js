@@ -24,11 +24,12 @@ const cartsSchema = new mongoose.Schema({
   size: String,
   storeProfile: String,
   storeName: String,
+  productId: String,
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 });
 
 const orderItemSchema = new mongoose.Schema({
-  id: {
+  productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product',
     required: true,
@@ -149,7 +150,7 @@ const userSchema = new mongoose.Schema(
     storeName: String,
     account: Number,
     isApprove: { type: Boolean },
-
+    isBlocked: { type: Boolean },
     profile: {
       type: String,
       default: '',
@@ -175,11 +176,26 @@ const addressSchema = new mongoose.Schema({
   isDefault: { type: Boolean, default: false },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 });
-
+const userActivitySchema = new mongoose.Schema({
+  user: {
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  },
+  action: {
+    type: String,
+    required: true,
+  },
+  details: {
+    type: String,
+  },
+});
 const Product = mongoose.model('Product', productSchema);
+const Activity = mongoose.model('Activity', userActivitySchema);
 const Cart = mongoose.model('Cart', cartsSchema);
 const User = mongoose.model('User', userSchema);
 const Address = mongoose.model('Address', addressSchema);
 const Order = mongoose.model('Order', orderSchema);
 
-export { Product, Cart, User, Address, Order };
+export { Product, Cart, User, Address, Order, Activity };
