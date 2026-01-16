@@ -1,23 +1,27 @@
 import dotenv from 'dotenv';
 dotenv.config();
-import './cloud_config/cloudConfig.js';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import { lastSeenUpdater } from './controllers/controller.js';
 import { crudePretectedRoutes } from './routes/CrudeRoutes.js';
-import { Product, Cart, Address, Order } from './models/Model.js';
-import { uploadProdImages } from './controllers/controller.js';
-import { authMiddleware } from './my-auth/Mddleware.js';
+import { Product, Cart, Address, Order } from './models/model.js';
 import seedAdmin from './seedAdmin.js';
 import userRoutes from './routes/usersRoutes.js';
+import {
+  authMiddleware,
+  uploadProdImages,
+  lastSeenUpdater,
+} from './my-auth/Mddleware.js';
 
 const Myapp = express();
 
 Myapp.use(express.json());
-
 Myapp.use(express.urlencoded({ extended: true }));
+
 const frontendUrl = process.env.LOCAL_FRONT_URL || process.env.PROD_FRONT_URL;
+console.log(frontendUrl);
+const uri = process.env.MONGO_URI || process.env.ATLAS_URI;
+
 Myapp.use(
   cors({
     origin: frontendUrl,
@@ -26,8 +30,6 @@ Myapp.use(
     credentials: true,
   })
 );
-
-Myapp.use(userRoutes);
 
 Myapp.use(
   '/product',
@@ -51,6 +53,11 @@ Myapp.use(
       remove: [authMiddleware, lastSeenUpdater],
       update: [authMiddleware, lastSeenUpdater],
     },
+    activity: {
+      create: 'ADD_TO_CART',
+      update: 'UPDATE_CART_ITEM',
+      remove: 'DELETE_CART_ITEM',
+    },
   })
 );
 Myapp.use(
@@ -65,22 +72,14 @@ Myapp.use(
     },
   })
 );
-Myapp.use(
-  '/order',
-  crudePretectedRoutes({
-    model: Order,
-    middleWare: {
-      getAll: [authMiddleware, lastSeenUpdater],
-    },
-  })
-);
+
+Myapp.use(userRoutes);
 
 // global error catcher
 Myapp.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: err.message || 'something went wrong ' });
 });
-const uri = process.env.MONGO_URI || process.env.ATLAS_URI;
 
 const serverStarter = async () => {
   try {

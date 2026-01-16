@@ -1,28 +1,34 @@
 import express from 'express';
+import { Product, Order, Activity } from '../models/model.js';
 import {
   getUserList,
-  getProduct,
   logout,
   login,
   register,
   setDefaultAddress,
   placeOrder,
   getPSGC,
-  getOrder,
+  getMyOrders,
+  getAll,
 } from '../controllers/controller.js';
-import { authMiddleware } from '../my-auth/Mddleware.js';
-import { lastSeenUpdater } from '../controllers/controller.js';
 
+import {
+  lastSeenUpdater,
+  authMiddleware,
+  uploadProfileImage,
+} from '../my-auth/Mddleware.js';
 const router = express.Router();
+
 router.get('/users_list', authMiddleware, getUserList);
-router.get('/product_list', getProduct);
+router.get('/product_list', getAll(Product));
+router.get('/userActivity', getAll(Activity));
 router.get('/get_psgc', authMiddleware, lastSeenUpdater, getPSGC);
-// router.get('/order', authMiddleware, lastSeenUpdater, getOrder);
+router.get('/order', authMiddleware, lastSeenUpdater, getMyOrders);
 
 /////////////////<<<<<<<POST>>>>>>///////////////////////
 router.post('/logout', authMiddleware, logout);
 router.post('/login', login);
-router.post('/register', register);
+router.post('/register', uploadProfileImage, register);
 router.post('/place_order', authMiddleware, lastSeenUpdater, placeOrder);
 
 //////////////////<<<<<<<<<PATCH>>>>>>>>>//////////////////

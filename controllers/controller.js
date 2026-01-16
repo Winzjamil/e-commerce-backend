@@ -1,146 +1,27 @@
 // import multer from 'multer';
 import dotenv from 'dotenv';
 dotenv.config();
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import cloudinary from '../cloud_config/cloudConfig.js';
-import multer from 'multer';
-import { User, Product, Address, Order, Cart } from '../models/Model.js';
-import { isOnline } from '../enums/index.js';
+import {
+  User,
+  Product,
+  Address,
+  Order,
+  Cart,
+  Activity,
+} from '../models/model.js';
+import { ADMIN_ACCESS, isOnline } from '../enums/index.js';
 import { USER_ACCESS, SELLER_ACCESS } from '../enums/index.js';
-
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
+import transporter from '../config/mailer.js';
 
 const SECRET_KEY = process.env.TOKEN_SECRET;
 
-export const uploadProdImages = [
-  upload.array('images', 10),
-  async (req, res, next) => {
-    try {
-      if (!req.files?.length) return next();
-
-      const uploadedImages = await Promise.all(
-        req.files.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              const stream = cloudinary.uploader.upload_stream(
-                { folder: 'products' },
-                (err, result) => {
-                  if (err) return reject(err);
-                  resolve(result);
-                }
-              );
-              stream.end(file.buffer);
-            })
-        )
-      );
-      req.body.images = uploadedImages.map((img) => img.secure_url);
-      next();
-    } catch (err) {
-      console.error('Failed to upload images:', err.message);
-      next(err);
-    }
-  },
-];
-
-export const lastSeenUpdater = async (req, res, next) => {
-  if (req.user?.id) {
-    await User.findByIdAndUpdate(req.user.id, { lastSeen: new Date() });
-    next();
-  }
-};
-
-export const getUserList = async (req, res) => {
-  try {
-    const doc = await User.find({ role: [USER_ACCESS, SELLER_ACCESS] });
-    const updatedDoc = doc.map((d) => ({
-      _id: d._id,
-      userName: d.userName,
-      role: d.role,
-      email: d.email,
-      isOnline: isOnline(d.lastSeen),
-      date: Date.now(),
-      isApprove: d.isApprove,
-    }));
-
-    const approvedSeller = updatedDoc.filter(
-      (d) => d.role === SELLER_ACCESS && d.isApprove === true
-    );
-    const userRole = updatedDoc.filter((d) => d.role === USER_ACCESS);
-    const users = [...userRole, ...approvedSeller];
-    res.status(200).json({
-      message: 'items fetched successfully',
-      data: users,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
-};
-
-export const getProduct = async (req, res) => {
-  const docs = await Product.find();
-  console.log(docs);
-  if (!docs) {
-    return res.status(404).json({ message: `products not found` });
-  }
-  res.status(200).json({
-    message: `items fetched successfully`,
-    data: docs,
-  });
-};
-/////////////////////<<<<<<<<<<POST>>>>>>>>>>>>>>>///////////////////////
-export const logout = async (req, res) => {
-  try {
-    await User.findByIdAndUpdate(req.user.id, { lastSeen: new Date(0) });
-    res.json('logout successfully');
-  } catch (err) {
-    res
-      .status(500)
-      .json({ message: 'internal server error', error: err.message });
-  }
-};
-export const login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      return res.status(401).json({ message: 'invalid email or password' });
-    }
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: 'invalid email or password ' });
-    }
-
-    user.lastSeen = Date.now();
-    await user.save();
-    const token = jwt.sign({ id: user._id, email: user.email }, SECRET_KEY);
-
-    let newUser;
-    isMatch && user.role === SELLER_ACCESS
-      ? (newUser = {
-          userName: user.userName,
-          role: user.role,
-          profile: user.profile,
-          storeName: user.storeName,
-        })
-      : (newUser = {
-          userName: user.userName,
-          role: user.role,
-        });
-
-    res.status(200).json({ user: newUser, message: 'login succesfull', token });
-  } catch (err) {
-    res.status(500).json('internal service error');
-  }
-};
 export const register = async (req, res) => {
   try {
     const { userName, email, password, role, storeName, account, profile } =
       req.body;
-
     const hashedPassword = await bcrypt.hash(password, 10);
     let newUser;
     req.body && req.body.role && role === SELLER_ACCESS
@@ -153,12 +34,16 @@ export const register = async (req, res) => {
           account,
           profile,
           isApprove: false,
+          isBlocked: false,
         }))
       : (newUser = new User({
           userName,
           email,
           password: hashedPassword,
+          profile,
+          isBlocked: false,
         }));
+
     await newUser.save();
     res.status(200).json({ message: 'account created sucessfully' });
   } catch (err) {
@@ -169,6 +54,102 @@ export const register = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error.' });
   }
 };
+
+export const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: 'invalid email or password' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'invalid email or password ' });
+    }
+
+    user.lastSeen = Date.now();
+    await user.save();
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role },
+      SECRET_KEY
+    );
+
+    let newUser;
+    if (isMatch && user.role === SELLER_ACCESS) {
+      newUser = {
+        userName: user.userName,
+        role: user.role,
+        profile: user.profile,
+        storeName: user.storeName,
+      };
+    } else {
+      newUser = {
+        userName: user.userName,
+        role: user.role,
+      };
+    }
+
+    res.status(200).json({ user: newUser, message: 'login succesfull', token });
+    // createActivity({
+    //   action: 'LOGIN',
+    //   details: 'Login successfull',
+    // });
+  } catch (err) {
+    res.status(500).json('internal service error' || err.message);
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user.id, { lastSeen: new Date(0) });
+    res.json('logout successfully');
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: 'internal server error', error: err.message });
+  }
+};
+
+export const getUserList = async (req, res) => {
+  try {
+    const users = await User.find(
+      {
+        $or: [{ role: USER_ACCESS }, { role: SELLER_ACCESS, isApprove: true }],
+      },
+      '_id userName role email lastSeen isApprove'
+    ).lean();
+
+    const mappedUsers = users.map((user) => ({
+      ...user,
+      isOnline: isOnline(user.lastSeen),
+    }));
+
+    res.status(200).json({
+      message: 'Users fetched successfully',
+      data: mappedUsers,
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+export const getAll = (model) => async (req, res) => {
+  const docs = await model.find();
+
+  if (!docs || docs.length <= 0) {
+    return res.status(404).json({ message: `products not found` });
+  }
+  res.status(200).json({
+    message: `items fetched successfully`,
+    data: docs,
+  });
+};
+
 /////////////////////////<<<<<<<<<PATCH>>>>>>>>>>///////////////////
 export const setDefaultAddress = async (req, res) => {
   const address = await Address.findOne({
@@ -215,7 +196,7 @@ export const placeOrder = async (req, res) => {
     }
 
     orderItems.push({
-      id: product._id,
+      productId: product._id,
       title: product.title,
       paymentMethod: paymentMethod,
       price: product.price,
@@ -236,13 +217,13 @@ export const placeOrder = async (req, res) => {
 
   for (const item of orderItems) {
     await Product.findByIdAndUpdate(item.productId, {
-      $inc: { stock: -item.qty },
+      $inc: { stock: -item.quantity },
     });
   }
 
   await Cart.deleteMany({
     owner: req.user.id,
-    _id: { $in: orderItems.map((i) => i.id) },
+    _id: { $in: orderItems.map((i) => i.productId) },
   });
 
   res.status(201).json({
@@ -250,18 +231,48 @@ export const placeOrder = async (req, res) => {
     data: order,
   });
 };
-export const getOrder = async (req, res) => {
-  try {
-    const order = await Order.find({ owner: req.user.id });
-    const orderItem = [...order].map((item) => item.items);
-    if (!order) {
-      res.status(400).json({ message: 'no order found ' });
+
+export const getMyOrders = async (req, res) => {
+  const userId = req.user.id;
+
+  switch (req.user.role) {
+    case ADMIN_ACCESS: {
+      const allOrders = await Order.find();
+      if (!allOrders.length) {
+        return res.status(404).json({ message: 'No orders found' });
+      }
+      return res.status(200).json({ data: allOrders });
     }
-    res.status(200).json({ data: orderItem });
-  } catch (err) {
-    res.status(400).json({ error: 'internel server error ' || err.message });
+
+    case SELLER_ACCESS: {
+      const orders = await Order.find({ 'items.seller': userId });
+
+      const sellerOrders = orders.map((order) => {
+        const sellerItems = order.items.filter(
+          (item) => item.seller.toString() === userId
+        );
+
+        return {
+          _id: order._id,
+          items: sellerItems,
+          shippingAddress: order.shippingAddress,
+          paymentMethod: order.paymentMethod,
+          paymentStatus: order.paymentStatus,
+          orderStatus: order.orderStatus,
+          createdAt: order.createdAt,
+        };
+      });
+
+      return res.status(200).json({ data: sellerOrders });
+    }
+    default: {
+      // normal user
+      const orders = await Order.find({ owner: userId });
+      return res.status(200).json({ data: orders });
+    }
   }
 };
+
 export const getPSGC = async (req, res) => {
   const { type, regionCode, provinceCode, cityCode } = req.query;
 
@@ -289,4 +300,69 @@ export const getPSGC = async (req, res) => {
   } catch {
     res.status(500).json({ message: 'Failed to fetch PSGC data' });
   }
+};
+
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.json({
+        message: 'If the email exists, a reset link was sent.',
+      });
+    }
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = Date.now() + 3600000;
+    await user.save();
+
+    const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: user.email,
+      subject: 'Password Reset Request',
+      text: `Reset your password: ${resetURL}`,
+    });
+
+    res.json({ message: 'If the email exists, a reset link was sent.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// 🔹 Reset Password Route
+export const resetPassword = async () => {
+  const { token } = req.params;
+  const { newPassword } = req.body;
+
+  try {
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }, // token not expired
+    });
+
+    if (!user)
+      return res.status(400).json({ message: 'Invalid or expired token' });
+
+    user.password = newPassword; // will be hashed by pre-save hook
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Password has been reset successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+export const createActivity = async ({ owner, action, details, email }) => {
+  if (!owner) throw new Error('owner is required for activity');
+  await Activity.create({ owner, action, details, email });
 };
