@@ -16,7 +16,7 @@ import {
   lastSeenUpdater,
   authMiddleware,
   uploadProfileImage,
-} from '../my-auth/Mddleware.js';
+} from '../my-auth/middleware.js';
 const router = express.Router();
 
 router.get('/users_list', authMiddleware, getUserList);
