@@ -55,6 +55,51 @@ export const register = async (req, res) => {
   }
 };
 
+export const generateAccessToken = (user) => {
+  return jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, {
+    expiresIn: '15m',
+  });
+};
+
+export const generateRefreshToken = (user) => {
+  return jwt.sign({ id: user._id }, process.env.REFRESH_SECRET, {
+    expiresIn: '7d',
+  });
+};
+// Refresh token controller
+export const refreshTokenController = (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    return res.status(401).json({ message: 'No refresh token' });
+  }
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.REFRESH_SECRET);
+
+    const newAccessToken = generateAccessToken({
+      id: decoded.id,
+      username: decoded.username,
+      role: decoded.role,
+    });
+
+    return res.json({ accessToken: newAccessToken });
+  } catch (err) {
+    return res
+      .status(403)
+      .json({ message: 'Refresh token expired or invalid' });
+  }
+};
+export const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'user get successfully', user });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -62,7 +107,6 @@ export const login = async (req, res) => {
     if (!user) {
       return res.status(401).json({ message: 'invalid email or password' });
     }
-
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'invalid email or password ' });
@@ -70,33 +114,22 @@ export const login = async (req, res) => {
 
     user.lastSeen = Date.now();
     await user.save();
-    const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
-      SECRET_KEY
-    );
 
-    let newUser;
-    if (isMatch && user.role === SELLER_ACCESS) {
-      newUser = {
-        userName: user.userName,
-        role: user.role,
-        profile: user.profile,
-        storeName: user.storeName,
-      };
-    } else {
-      newUser = {
-        userName: user.userName,
-        role: user.role,
-      };
-    }
+    const token = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
 
-    res.status(200).json({ user: newUser, message: 'login succesfull', token });
-    // createActivity({
-    //   action: 'LOGIN',
-    //   details: 'Login successfull',
-    // });
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.status(200).json({ message: 'token get successfully ', token });
   } catch (err) {
-    res.status(500).json('internal service error' || err.message);
+    res.status(500).json({ message: 'internal service error' || err.message });
   }
 };
 
@@ -117,7 +150,7 @@ export const getUserList = async (req, res) => {
       {
         $or: [{ role: USER_ACCESS }, { role: SELLER_ACCESS, isApprove: true }],
       },
-      '_id userName role email lastSeen isApprove'
+      '_id userName role email lastSeen isApprove',
     ).lean();
 
     const mappedUsers = users.map((user) => ({
@@ -249,7 +282,7 @@ export const getMyOrders = async (req, res) => {
 
       const sellerOrders = orders.map((order) => {
         const sellerItems = order.items.filter(
-          (item) => item.seller.toString() === userId
+          (item) => item.seller.toString() === userId,
         );
 
         return {

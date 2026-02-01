@@ -11,6 +11,7 @@ const SECRET_KEY = process.env.TOKEN_SECRET;
 
 export const authMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
+
   if (!authHeader || !authHeader.startsWith('Bearer')) {
     return res.status(401).json({ message: 'Unauthorized. Token missing.' });
   }
@@ -23,7 +24,7 @@ export const authMiddleware = (req, res, next) => {
   } catch (err) {
     console.log('JWT VERIFY FAILED', err.message);
     return res
-      .status(404)
+      .status(403)
       .json({ message: 'Invalid or expired token.' || err.message });
   }
 };
@@ -43,11 +44,11 @@ export const uploadProdImages = [
                 (err, result) => {
                   if (err) return reject(err);
                   resolve(result);
-                }
+                },
               );
               stream.end(file.buffer);
-            })
-        )
+            }),
+        ),
       );
       req.body.images = uploadedImages.map((img) => img.secure_url);
       next();
@@ -71,7 +72,7 @@ export const uploadProfileImage = [
           (err, result) => {
             if (err) return reject(err);
             resolve(result);
-          }
+          },
         );
         stream.end(req.file.buffer);
       });

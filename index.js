@@ -3,10 +3,11 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import { crudePretectedRoutes } from './routes/crudeRoutes.js';
+import { crudePretectedRoutes } from './routes/CrudeRoutes.js';
 import { Product, Cart, Address } from './models/model.js';
 import seedAdmin from './seedAdmin.js';
 import userRoutes from './routes/usersRoutes.js';
+import cookieParser from 'cookie-parser';
 import {
   authMiddleware,
   uploadProdImages,
@@ -15,11 +16,12 @@ import {
 
 const Myapp = express();
 
+Myapp.use(cookieParser());
 Myapp.use(express.json());
 Myapp.use(express.urlencoded({ extended: true }));
 
 const frontendUrl = process.env.LOCAL_FRONT_URL || process.env.PROD_FRONT_URL;
-console.log(frontendUrl);
+
 const uri = process.env.MONGO_URI || process.env.ATLAS_URI;
 
 Myapp.use(
@@ -28,7 +30,7 @@ Myapp.use(
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
-  })
+  }),
 );
 
 Myapp.use(
@@ -41,7 +43,7 @@ Myapp.use(
       getAll: [authMiddleware, lastSeenUpdater],
       update: [authMiddleware, lastSeenUpdater],
     },
-  })
+  }),
 );
 Myapp.use(
   '/cart',
@@ -58,7 +60,7 @@ Myapp.use(
       update: 'UPDATE_CART_ITEM',
       remove: 'DELETE_CART_ITEM',
     },
-  })
+  }),
 );
 Myapp.use(
   '/address',
@@ -70,7 +72,7 @@ Myapp.use(
       getAll: [authMiddleware, lastSeenUpdater],
       update: [authMiddleware, lastSeenUpdater],
     },
-  })
+  }),
 );
 
 Myapp.use(userRoutes);
@@ -78,7 +80,9 @@ Myapp.use(userRoutes);
 // global error catcher
 Myapp.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ message: err.message || 'something went wrong ' });
+  res
+    .status(500)
+    .json({ message: err.message || 'something went wrong body ' });
 });
 
 const serverStarter = async () => {
