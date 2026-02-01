@@ -3,7 +3,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import { crudePretectedRoutes } from './routes/CrudeRoutes.js';
+import { crudePretectedRoutes } from './routes/crudeRoutes.js';
 import { Product, Cart, Address } from './models/model.js';
 import seedAdmin from './seedAdmin.js';
 import userRoutes from './routes/usersRoutes.js';
